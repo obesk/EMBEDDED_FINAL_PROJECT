@@ -75,6 +75,12 @@ int main(void) {
 			print_to_buff("$MEMRG,1*", &UART_output_buff);
 		}
 
+		if (robot_state == MOVING) {
+			pwm_start();
+		} else {
+			pwm_stop();
+		}
+
 		while (UART_input_buff.read != UART_input_buff.write) {
 			const int status =
 				parse_byte(&pstate, UART_input_buff.buff[UART_input_buff.read]);
@@ -85,6 +91,20 @@ int main(void) {
 					const int yaw =
 						extract_integer(&pstate.msg_payload[next_arg]);
 					pwm_set_velocities(speed, yaw);
+				} else if (strcmp(pstate.msg_type, "PCSTP") == 0) {
+					if (robot_state != EMERGENCY) {
+						print_to_buff("$MACK,1*", &UART_output_buff);
+						robot_state = WAIT;
+					} else {
+						print_to_buff("$MACK,0*", &UART_output_buff);
+					}
+				} else if (strcmp(pstate.msg_type, "PCSTT") == 0) {
+					if (robot_state != EMERGENCY) {
+						print_to_buff("$MACK,1*", &UART_output_buff);
+						robot_state = MOVING;
+					} else {
+						print_to_buff("$MACK,0*", &UART_output_buff);
+					}
 				}
 			}
 			UART_input_buff.read = (UART_input_buff.read + 1) % INPUT_BUFF_LEN;
@@ -100,15 +120,14 @@ void __attribute__((__interrupt__, __auto_psv__)) _INT1Interrupt(void) {
 	tmr_setup_period(TIMER2, 10);
 }
 
+// TODO: should emergency be accounted for?
 void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 	IFS0bits.T2IF = 0;
 	T2CONbits.TON = 0;
 
 	if (robot_state == WAIT) {
-		pwm_start();
 		robot_state = MOVING;
 	} else if (robot_state == MOVING) {
-		pwm_stop();
 		robot_state = WAIT;
 	}
 }
