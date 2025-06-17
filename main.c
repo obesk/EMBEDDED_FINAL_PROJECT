@@ -27,6 +27,8 @@ volatile struct circular_buffer UART_output_buff = {
 void timers_init() {
 	IFS0bits.T2IF = 0;
 	IEC0bits.T2IE = 1; // enabling the timer 2 interrupt
+	IFS0bits.T3IF = 0;
+	IEC0bits.T3IE = 1; // enabling the timer 2 interrupt
 }
 
 void button_init(void) {
@@ -38,6 +40,8 @@ void button_init(void) {
 enum RobotState robot_state = WAIT;
 
 int main(void) {
+	// TODO: is this ok ?
+	// FIXE: interrupts still triggering
 	IEC1bits.INT1IE = 0;
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
@@ -74,6 +78,7 @@ int main(void) {
 		if (distance < OBSTACLE_THRESHOLD_CM) {
 			robot_state = EMERGENCY;
 			print_to_buff("$MEMRG,1*", &UART_output_buff);
+			tmr_setup_period(TIMER3, 5);
 		}
 
 		if (robot_state == MOVING) {
@@ -121,16 +126,23 @@ void __attribute__((__interrupt__, __auto_psv__)) _INT1Interrupt(void) {
 	tmr_setup_period(TIMER2, 10);
 }
 
-// TODO: should emergency be accounted for?
 void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 	IFS0bits.T2IF = 0;
 	T2CONbits.TON = 0;
+
+	if (robot_state == EMERGENCY) {
+		return;
+	}
 
 	if (robot_state == WAIT) {
 		robot_state = MOVING;
 	} else if (robot_state == MOVING) {
 		robot_state = WAIT;
 	}
+}
+
+void __attribute__((__interrupt__, no_auto_psv)) _T3Interrupt(void) {
+	robot_state = WAIT;
 }
 
 void __attribute__((__interrupt__, no_auto_psv)) _U1TXInterrupt(void) {
