@@ -25,9 +25,8 @@ volatile struct circular_buffer UART_output_buff = {
 };
 
 void timers_init() {
-	IEC0bits.T2IE = 1; // enabling the timer 2 interrupt
-
 	IFS0bits.T2IF = 0;
+	IEC0bits.T2IE = 1; // enabling the timer 2 interrupt
 }
 
 void button_init(void) {
@@ -39,6 +38,7 @@ void button_init(void) {
 enum RobotState robot_state = WAIT;
 
 int main(void) {
+	IEC1bits.INT1IE = 0;
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
@@ -53,6 +53,7 @@ int main(void) {
 	button_init();
 	timers_init();
 	init_uart();
+	IEC1bits.INT1IE = 1;
 
 	move(RIGHT);
 
