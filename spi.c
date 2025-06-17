@@ -21,7 +21,7 @@ void init_spi() {
     // since for the SPI we wait actively for the readings, we set the maximum 
     // frequency possible 
     SPI1CON1bits.PPRE = 3; // 1:1 primary prescaler
-    SPI1CON1bits.SPRE = 6; // 2:1 secondary prescaler
+    SPI1CON1bits.SPRE = 3; // 2:1 secondary prescaler
     
     TRISAbits.TRISA1 = 1; // RA1-RPI17 MISO
     TRISFbits.TRISF12 = 0; // RF12-RP108 SCK
@@ -34,7 +34,7 @@ void init_spi() {
     RPINR20bits.SDI1R = 0b0010001; // MISO (SDI1) - RPI17
     RPOR12bits.RP109R = 0b000101;// MOSI (SDO1) - RF13;
     RPOR11bits.RP108R = 0b000110; // SCK1;
-        
-    SPI1STATbits.SPIEN = 1; // enable SPI
+    
     SPI1CON1bits.CKP = 1; // Set clock idle state to high
+    SPI1STATbits.SPIEN = 1; // enable SPI
 }

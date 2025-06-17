@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "pwm.h"
+#include "spi.h"
 #include "timer.h"
 #include "uart.h"
 
@@ -28,7 +29,7 @@ void timers_init() {
 	IFS0bits.T2IF = 0;
 	IEC0bits.T2IE = 1; // enabling the timer 2 interrupt
 	IFS0bits.T3IF = 0;
-	IEC0bits.T3IE = 1; // enabling the timer 2 interrupt
+	IEC0bits.T3IE = 1; // enabling the timer 3 interrupt
 }
 
 void button_init(void) {
@@ -37,14 +38,70 @@ void button_init(void) {
 	IEC1bits.INT1IE = 1;	 // enabling interrupt 1
 }
 
+// void activate_magnetometer() {
+// 	// selecting the magnetometer and disabling accelerometer and gyroscope
+// 	CS_GYR = 1;
+// 	CS_MAG = 1;
+//
+// 	CS_ACC = 0;
+//
+// 	spi_write(0x4B);
+// 	spi_write(0x01); // changing the magnetometer to sleep state
+//
+// 	CS_ACC = 1;
+//
+// 	tmr_wait_ms(TIMER1,
+// 				3); // waiting for the magnetometer to go into sleep state
+//
+// 	CS_ACC = 0;
+// 	spi_write(0x4C);
+// 	spi_write(0x00); // changing the magnetometer to active state
+// 	CS_ACC = 1;
+//
+// 	tmr_wait_ms(TIMER1,
+// 				3); // waiting for the magnetometer to go into active state
+// }
+//
+// int read_mag_axis(enum Axis axis) {
+// 	int axis_value;
+//
+// 	// the overflow should not happen by design. If it happens the LED1 is
+// 	// turned on to signal a bug in the code
+// 	if (SPI1STATbits.SPIROV) {
+// 		SPI1STATbits.SPIROV = 0;
+// 		LATA = 1;
+// 	}
+// 	CS_ACC = 0;
+// 	// the axis registers are sequential
+// 	spi_write((0x42 + axis * 2) | 0x80); // writing the axis register to read
+//
+// 	if (axis == X_AXIS || axis == Y_AXIS) {
+// 		// converting to int and shifting the values
+// 		const int bytes_value =
+// 			(spi_write(0x00) & 0x00F------8) | (spi_write(0x00) << 8);
+// 		axis_value = bytes_value >> 3;
+// 	} else {
+// 		// converting to int and shifting the values
+// 		const int bytes_value =
+// 			(spi_write(0x00) & 0x00FE) | (spi_write(0x00) << 8);
+// 		axis_value = bytes_value >> 1;
+// 	}
+//
+// 	CS_ACC = 1;
+// 	return axis_value;
+// }
+
 enum RobotState robot_state = WAIT;
 
 int main(void) {
 	// TODO: is this ok ?
 	// FIXE: interrupts still triggering
-	IEC1bits.INT1IE = 0;
-	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
+	// IEC1bits.INT1IE = 0;
+	/*TRISA = TRISG = */ ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
+
+	// TRISBbits.TRISB8 = 0;
+	// TRISFbits.TRISF1 = 0;
 
 	char output_str[100]; // TODO: change with correct value
 	char input_buff[INPUT_BUFF_LEN];
@@ -57,9 +114,9 @@ int main(void) {
 	button_init();
 	timers_init();
 	init_uart();
-	IEC1bits.INT1IE = 1;
+	init_spi();
 
-	move(RIGHT);
+	// IEC1bits.INT1IE = 1;
 
 	int count_ld1_toggle = 0;
 
@@ -67,12 +124,33 @@ int main(void) {
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
-	int distance = 9999;
+	int distance = 0;
+
+	tmr_wait_ms(TIMER4, 100);
+	CS_MAG = 1;
+	CS_GYR = 1;
+	CS_ACC = 0;
+	spi_write(0x11);
+	spi_write(0x00);
+	CS_ACC = 1;
+	tmr_wait_ms(TIMER4, 3);
+	CS_ACC = 0;
+	spi_write(0x00 | 0x80);
+	int chipid = spi_write(0x00);
+	CS_ACC = 1;
+
+	sprintf(output_str, "CH:%d", chipid);
+	print_to_buff(output_str, &UART_output_buff);
 
 	while (1) {
+
 		if (++count_ld1_toggle >= CLOCK_LD1_TOGGLE) {
 			count_ld1_toggle = 0;
-			LATA = !LATA;
+			// LATA = !LATA;
+			if (robot_state == EMERGENCY) {
+				LATBbits.LATB8 = !LATBbits.LATB8;
+				LATFbits.LATF1 = !LATFbits.LATF1;
+			}
 		}
 
 		if (distance < OBSTACLE_THRESHOLD_CM) {
