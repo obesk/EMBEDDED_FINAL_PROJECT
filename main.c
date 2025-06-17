@@ -12,6 +12,10 @@
 #define INPUT_BUFF_LEN 100
 #define OUTPUT_BUFF_LEN 100
 
+#define OBSTACLE_THRESHOLD_CM 0
+
+enum RobotState { WAIT, MOVING, EMERGENCY };
+
 volatile struct circular_buffer UART_input_buff = {
 	.len = INPUT_BUFF_LEN,
 };
@@ -31,6 +35,8 @@ void button_init(void) {
 	IFS1bits.INT1IF = 0;	 // resetting flag of interrupt 1
 	IEC1bits.INT1IE = 1;	 // enabling interrupt 1
 }
+
+enum RobotState robot_state = WAIT;
 
 int main(void) {
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
@@ -55,10 +61,18 @@ int main(void) {
 	const int main_hz = 500;
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
+
+	int distance = 9999;
+
 	while (1) {
 		if (++count_ld1_toggle >= CLOCK_LD1_TOGGLE) {
 			count_ld1_toggle = 0;
 			LATA = !LATA;
+		}
+
+		if (distance < OBSTACLE_THRESHOLD_CM) {
+			robot_state = EMERGENCY;
+			print_to_buff("$MEMRG,1*", &UART_output_buff);
 		}
 
 		while (UART_input_buff.read != UART_input_buff.write) {
@@ -70,12 +84,12 @@ int main(void) {
 					const int next_arg = next_value(pstate.msg_payload, 1);
 					const int yaw =
 						extract_integer(&pstate.msg_payload[next_arg]);
-					sprintf(output_str, "S:%d,Y:%d", speed, yaw);
-					print_to_buff(output_str, &UART_output_buff);
+					pwm_set_velocities(speed, yaw);
 				}
 			}
 			UART_input_buff.read = (UART_input_buff.read + 1) % INPUT_BUFF_LEN;
 		}
+
 		tmr_wait_period(TIMER1);
 	}
 	return 0;
@@ -86,17 +100,17 @@ void __attribute__((__interrupt__, __auto_psv__)) _INT1Interrupt(void) {
 	tmr_setup_period(TIMER2, 10);
 }
 
-int wait_state = 0;
 void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 	IFS0bits.T2IF = 0;
 	T2CONbits.TON = 0;
 
-	if (wait_state) {
+	if (robot_state == WAIT) {
 		pwm_start();
-	} else {
+		robot_state = MOVING;
+	} else if (robot_state == MOVING) {
 		pwm_stop();
+		robot_state = WAIT;
 	}
-	wait_state = !wait_state;
 }
 
 void __attribute__((__interrupt__, no_auto_psv)) _U1TXInterrupt(void) {

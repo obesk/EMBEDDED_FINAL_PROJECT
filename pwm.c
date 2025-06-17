@@ -68,6 +68,42 @@ void move(enum Direction direction) {
 	return;
 }
 
+void pwm_set_velocities(int forward_speed, int yaw_rate) {
+	if (forward_speed < -100 || forward_speed > 100 || yaw_rate < -100 || yaw_rate > 100) {
+		return;
+	}
+	
+	int right_speed = forward_speed + yaw_rate;
+	int left_speed = forward_speed - yaw_rate;
+
+	if (right_speed > 100) {
+		left_speed -= right_speed % 101;
+		right_speed = 100;
+	} else if (right_speed < -100) {
+		left_speed += right_speed % 101;
+		right_speed = -100;
+	}
+
+	if (left_speed > 100) {
+		right_speed -= left_speed % 101;
+		left_speed = 100;
+	} else if (left_speed < -100) {
+		right_speed += left_speed % 101;
+		left_speed = -100;
+	}
+
+	if (right_speed > 0) {
+		OC4R = comp_duty(right_speed);
+	} else {
+		OC3R = comp_duty(right_speed);
+	}
+	if (left_speed > 0) {
+		OC2R = comp_duty(left_speed);
+	} else {
+		OC1R = comp_duty(left_speed);
+	}
+}
+
 void pwm_start(void) {
 	// edge-aligned pwm mode
     OC1CON1bits.OCM = 0b110;

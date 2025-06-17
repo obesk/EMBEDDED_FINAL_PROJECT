@@ -1,6 +1,5 @@
 #include "timer.h"
 #include <xc.h>
-#define MAX_DELAY 200
 
 #define FCY 72000000
 #define MAX_UINT16 65535
