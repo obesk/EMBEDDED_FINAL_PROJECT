@@ -18,6 +18,8 @@
 
 #define OBSTACLE_THRESHOLD_CM 0
 
+#define N_ADC_READINGS 10
+
 enum RobotState { WAIT, MOVING, EMERGENCY };
 
 volatile struct circular_buffer UART_input_buff = {
@@ -31,6 +33,16 @@ struct AccReading {
 	int x;
 	int y;
 	int z;
+};
+
+struct ADCReading {
+	float distance;
+	float vbatt;
+};
+
+struct ADCReadings {
+	int w;
+	struct ADCReading readings[N_ADC_READINGS];
 };
 
 enum Axis {
@@ -84,6 +96,29 @@ int read_acc_axis(enum Axis axis) {
 	return axis_value;
 }
 
+struct ADCReading read_adc(void) {
+	struct ADCReading reading;
+
+	while (!AD1CON1bits.DONE) {
+		;
+	}
+
+	AD1CON1bits.SAMP = 0;
+	int adc0_raw_reading = ADC1BUF0;
+	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+	reading.vbatt = v_adc * 3;
+
+	int adc2_raw_reading = ADC1BUF2;
+	double v_adc_ir =
+		(adc2_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+	reading.distance = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) -
+						1.6 * pow(v_adc_ir, 3) + 0.24 * pow(v_adc_ir, 4)) *
+					   100;
+	AD1CON1bits.SAMP = 1;
+
+	return reading;
+}
+
 enum RobotState robot_state = WAIT;
 
 int main(void) {
@@ -115,9 +150,11 @@ int main(void) {
 	init_spi();
 	init_adc();
 
-	int dist;
-	double v_adc_batt;
-	// IEC1bits.INT1IE = 1;
+	struct ADCReadings ADC_readings;
+
+	for (int i = 0; i < N_ADC_READINGS; ++i) {
+		ADC_readings.readings[i] = read_adc();
+	}
 
 	int count_ld1_toggle = 0;
 	int count_acc_read = 0;
@@ -159,45 +196,47 @@ int main(void) {
 
 		if (distance < OBSTACLE_THRESHOLD_CM) {
 			robot_state = EMERGENCY;
+			// TODO: print only once
 			print_to_buff("$MEMRG,1*", &UART_output_buff);
 			tmr_setup_period(TIMER3, 5);
 		}
 
+		// TODO: is this ok ?
 		if (robot_state == MOVING) {
 			pwm_start();
 		} else {
 			pwm_stop();
 		}
 
+		ADC_readings.readings[ADC_readings.w] = read_adc();
+		ADC_readings.w = (ADC_readings.w + 1) % N_ADC_READINGS;
+
 		if (++count_ir_print >= CLOCK_IR_PRINT) {
 			count_ir_print = 0;
 
-			sprintf(output_str, "$MDIST,%d*", dist);
+			double dist = 0;
+			for (int i = 0; i < N_ADC_READINGS; ++i) {
+				dist += ADC_readings.readings[i].distance;
+			}
+
+			int idist = dist / N_ADC_READINGS;
+			sprintf(output_str, "$MDIST,%d*", idist);
 			print_to_buff(output_str, &UART_output_buff);
 		}
 
 		if (++count_batt_print >= CLOCK_BATT_PRINT) {
 			count_batt_print = 0;
 
-			sprintf(output_str, "$MBATT,%.2f*", v_adc_batt);
+			double v_batt = 0;
+			for (int i = 0; i < N_ADC_READINGS; ++i) {
+				v_batt += ADC_readings.readings[i].vbatt;
+			}
+
+			v_batt /= N_ADC_READINGS;
+
+			sprintf(output_str, "$MBATT,%.2f*", v_batt);
 			print_to_buff(output_str, &UART_output_buff);
 		}
-
-		while (!AD1CON1bits.DONE) {
-			;
-		}
-
-		AD1CON1bits.SAMP = 0;
-		int adcb = ADC1BUF0;
-		double v_adc = (adcb / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
-		v_adc_batt = v_adc * 3;
-
-		int adcff = ADC1BUF2;
-		double v_adc_ir = (adcff / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
-		dist = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) -
-				1.6 * pow(v_adc_ir, 3) + 0.24 * pow(v_adc_ir, 4)) *
-			   100;
-		AD1CON1bits.SAMP = 1;
 
 		while (UART_input_buff.read != UART_input_buff.write) {
 			const int status =
