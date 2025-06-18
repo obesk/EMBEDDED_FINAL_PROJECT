@@ -16,7 +16,7 @@
 #define INPUT_BUFF_LEN 100
 #define OUTPUT_BUFF_LEN 100
 
-#define OBSTACLE_THRESHOLD_CM 0
+#define OBSTACLE_THRESHOLD_CM 30
 
 #define N_ADC_READINGS 10
 
@@ -108,7 +108,7 @@ struct ADCReading read_adc(void) {
 	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
 	reading.vbatt = v_adc * 3;
 
-	int adc2_raw_reading = ADC1BUF2;
+	int adc2_raw_reading = ADC1BUF1;
 	double v_adc_ir =
 		(adc2_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
 	reading.distance = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) -
@@ -131,6 +131,7 @@ int main(void) {
 	// TODO: check if needed (emergency)
 	TRISBbits.TRISB8 = 0;
 	TRISFbits.TRISF1 = 0;
+
 	TRISBbits.TRISB9 = 0;
 	LATBbits.LATB9 = 1; // IR enable
 
@@ -165,10 +166,10 @@ int main(void) {
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
-	int distance = 0;
+	int distance = 100;
 
 	activate_accelerometer();
-
+	INTCON2bits.GIE = 1;
 	while (1) {
 
 		if (++count_acc_read >= CLOCK_ACC_READ) {
@@ -191,6 +192,9 @@ int main(void) {
 			if (robot_state == EMERGENCY) {
 				LATBbits.LATB8 = !LATBbits.LATB8;
 				LATFbits.LATF1 = !LATFbits.LATF1;
+			} else {
+				LATBbits.LATB8 = 0;
+				LATFbits.LATF1 = 0;
 			}
 		}
 
@@ -198,7 +202,7 @@ int main(void) {
 			robot_state = EMERGENCY;
 			// TODO: print only once
 			print_to_buff("$MEMRG,1*", &UART_output_buff);
-			tmr_setup_period(TIMER3, 5);
+			tmr_setup_period(TIMER3, 10000);
 		}
 
 		// TODO: is this ok ?
@@ -220,6 +224,7 @@ int main(void) {
 			}
 
 			int idist = dist / N_ADC_READINGS;
+			distance = idist;
 			sprintf(output_str, "$MDIST,%d*", idist);
 			print_to_buff(output_str, &UART_output_buff);
 		}
@@ -293,6 +298,9 @@ void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 }
 
 void __attribute__((__interrupt__, no_auto_psv)) _T3Interrupt(void) {
+	IFS0bits.T3IF = 0;
+	T3CONbits.TON = 0;
+
 	robot_state = WAIT;
 }
 
