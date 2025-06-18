@@ -26,15 +26,15 @@ volatile struct circular_buffer UART_output_buff = {
 	.len = OUTPUT_BUFF_LEN,
 };
 struct AccReading {
-    int x;
-    int y;
-    int z;
+	int x;
+	int y;
+	int z;
 };
 
 enum Axis {
-    X_AXIS = 0,
-    Y_AXIS,
-    Z_AXIS,
+	X_AXIS = 0,
+	Y_AXIS,
+	Z_AXIS,
 };
 
 void timers_init() {
@@ -59,13 +59,16 @@ void activate_accelerometer() {
 	spi_write(0x11);
 	spi_write(0x00); // changing the accelerometer to active state
 	CS_ACC = 1;
-	tmr_wait_ms(TIMER4, 3); // waiting for the accelerometer to go into active state
+	tmr_wait_ms(TIMER4,
+				3); // waiting for the accelerometer to go into active state
 }
 
-int read_acc_axis(enum Axis axis){
+int read_acc_axis(enum Axis axis) {
 	CS_ACC = 0;
 	// Startin from a specific register, I read twice
-	spi_write((0x02 + axis * 2)| 0x80); // 2 registers for each axis -> starting form 0x02 for x, 0x04 for y and 0x06 for z
+	spi_write((0x02 + axis * 2) |
+			  0x80); // 2 registers for each axis -> starting form 0x02 for x,
+					 // 0x04 for y and 0x06 for z
 	uint8_t axis_lsb = spi_write(0x00);
 	uint8_t axis_msb = spi_write(0x00);
 	CS_ACC = 1;
@@ -73,7 +76,7 @@ int read_acc_axis(enum Axis axis){
 	// Combining readings to reconstruct the real value of accelerations
 	int axis_value = (((axis_msb << 4) | (axis_lsb & 0x0F)));
 	if (axis_value & 0x800) {
-		axis_value |= 0xF000; 
+		axis_value |= 0xF000;
 	}
 
 	return axis_value;
@@ -123,17 +126,17 @@ int main(void) {
 
 		if (++count_acc_read >= CLOCK_ACC_READ) {
 			count_acc_read = 0;
-	
-			// Binding readings to reconstruct the values of accelerations along axis
+
+			// Binding readings to reconstruct the values of accelerations along
+			// axis
 			acc_reading.x = read_acc_axis(X_AXIS);
 			acc_reading.y = read_acc_axis(Y_AXIS);
 			acc_reading.z = read_acc_axis(Z_AXIS);
 
-			sprintf(output_buff, "$MACC,%d,%d,%d*", acc_reading.x, acc_reading.y, acc_reading.z);
-            print_to_buff(output_buff, &UART_output_buff);
-            // tmr_wait_ms(TIMER1, 100);
+			sprintf(output_str, "$MACC,%d,%d,%d*", acc_reading.x, acc_reading.y,
+					acc_reading.z);
+			print_to_buff(output_str, &UART_output_buff);
 		}
-
 
 		if (++count_ld1_toggle >= CLOCK_LD1_TOGGLE) {
 			count_ld1_toggle = 0;
