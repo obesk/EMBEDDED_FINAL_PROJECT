@@ -39,35 +39,6 @@ void pwm_init(void) {
     TRISDbits.TRISD4 = 0;
 }
 
-void move(enum Direction direction) {
-	switch (direction) {
-		case FORWARD:
-			OC1R = 0;
-			OC2R = comp_duty(50);
-			OC3R = 0;
-			OC4R = comp_duty(50);
-			break;
-
-		case RIGHT:
-			OC1R = 0;
-			OC2R = comp_duty(100);
-			OC3R = 0;
-			OC4R = comp_duty(50);
-			break;
-
-		case STOP:
-			OC1R = 0;
-			OC2R = 0;
-			OC3R = 0;
-			OC4R = 0;
-			break;
-		default:
-			break;
-	}
-
-	return;
-}
-
 void pwm_set_velocities(int forward_speed, int yaw_rate) {
 	if (forward_speed < -100 || forward_speed > 100 || yaw_rate < -100 || yaw_rate > 100) {
 		return;
@@ -92,15 +63,23 @@ void pwm_set_velocities(int forward_speed, int yaw_rate) {
 		left_speed = -100;
 	}
 
+	//TODO: use abs function
+	int abs_right = right_speed > 0 ? right_speed : -right_speed;
+	int abs_left = left_speed > 0 ? left_speed : -left_speed;
+
 	if (right_speed > 0) {
-		OC4R = comp_duty(right_speed);
+		OC4R = comp_duty(abs_right);
+		OC3R = 0;
 	} else {
-		OC3R = comp_duty(right_speed);
+		OC3R = comp_duty(abs_right);
+		OC4R = 0;
 	}
 	if (left_speed > 0) {
-		OC2R = comp_duty(left_speed);
+		OC2R = comp_duty(abs_left);
+		OC1R = 0;
 	} else {
-		OC1R = comp_duty(left_speed);
+		OC1R = comp_duty(abs_left);
+		OC2R = 0;
 	}
 }
 
