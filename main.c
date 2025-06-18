@@ -8,6 +8,8 @@
 #include <xc.h>
 
 #define CLOCK_LD1_TOGGLE 250
+#define CLOCK_BATT_PRINT 500
+#define CLOCK_IR_PRINT 50
 #define CLOCK_ACC_READ 50
 
 // TODO: size correctly and explain why
@@ -88,11 +90,14 @@ int main(void) {
 	// TODO: is this ok ?
 	// FIXME: interrupts still triggering
 	// IEC1bits.INT1IE = 0;
-	/*TRISA = TRISG = */ ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
+	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
-	// TRISBbits.TRISB8 = 0;
-	// TRISFbits.TRISF1 = 0;
+	// TODO: check if needed (emergency)
+	TRISBbits.TRISB8 = 0;
+	TRISFbits.TRISF1 = 0;
+	TRISBbits.TRISB9 = 0;
+	LATBbits.LATB9 = 1; // IR enable
 
 	struct AccReading acc_reading = {0};
 
@@ -108,11 +113,16 @@ int main(void) {
 	timers_init();
 	init_uart();
 	init_spi();
+	init_adc();
 
+	int dist;
+	double v_adc_batt;
 	// IEC1bits.INT1IE = 1;
 
 	int count_ld1_toggle = 0;
 	int count_acc_read = 0;
+	int count_ir_print = 0;
+	int count_batt_print = 0;
 
 	const int main_hz = 500;
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
@@ -140,7 +150,7 @@ int main(void) {
 
 		if (++count_ld1_toggle >= CLOCK_LD1_TOGGLE) {
 			count_ld1_toggle = 0;
-			// LATA = !LATA;
+			LATAbits.LATA0 = !LATAbits.LATA0;
 			if (robot_state == EMERGENCY) {
 				LATBbits.LATB8 = !LATBbits.LATB8;
 				LATFbits.LATF1 = !LATFbits.LATF1;
@@ -158,6 +168,36 @@ int main(void) {
 		} else {
 			pwm_stop();
 		}
+
+		if (++count_ir_print >= CLOCK_IR_PRINT) {
+			count_ir_print = 0;
+
+			sprintf(output_str, "$MDIST,%d*", dist);
+			print_to_buff(output_str, &UART_output_buff);
+		}
+
+		if (++count_batt_print >= CLOCK_BATT_PRINT) {
+			count_batt_print = 0;
+
+			sprintf(output_str, "$MBATT,%.2f*", v_adc_batt);
+			print_to_buff(output_str, &UART_output_buff);
+		}
+
+		while (!AD1CON1bits.DONE) {
+			;
+		}
+
+		AD1CON1bits.SAMP = 0;
+		int adcb = ADC1BUF0;
+		double v_adc = (adcb / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+		v_adc_batt = v_adc * 3;
+
+		int adcff = ADC1BUF2;
+		double v_adc_ir = (adcff / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+		dist = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) -
+				1.6 * pow(v_adc_ir, 3) + 0.24 * pow(v_adc_ir, 4)) *
+			   100;
+		AD1CON1bits.SAMP = 1;
 
 		while (UART_input_buff.read != UART_input_buff.write) {
 			const int status =
