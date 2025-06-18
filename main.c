@@ -8,6 +8,7 @@
 #include <xc.h>
 
 #define CLOCK_LD1_TOGGLE 250
+#define CLOCK_ACC_READ 50
 
 // TODO: size correctly and explain why
 #define INPUT_BUFF_LEN 100
@@ -24,6 +25,17 @@ volatile struct circular_buffer UART_input_buff = {
 volatile struct circular_buffer UART_output_buff = {
 	.len = OUTPUT_BUFF_LEN,
 };
+struct AccReading {
+    int x;
+    int y;
+    int z;
+};
+
+enum Axis {
+    X_AXIS = 0,
+    Y_AXIS,
+    Z_AXIS,
+};
 
 void timers_init() {
 	IFS0bits.T2IF = 0;
@@ -38,70 +50,48 @@ void button_init(void) {
 	IEC1bits.INT1IE = 1;	 // enabling interrupt 1
 }
 
-// void activate_magnetometer() {
-// 	// selecting the magnetometer and disabling accelerometer and gyroscope
-// 	CS_GYR = 1;
-// 	CS_MAG = 1;
-//
-// 	CS_ACC = 0;
-//
-// 	spi_write(0x4B);
-// 	spi_write(0x01); // changing the magnetometer to sleep state
-//
-// 	CS_ACC = 1;
-//
-// 	tmr_wait_ms(TIMER1,
-// 				3); // waiting for the magnetometer to go into sleep state
-//
-// 	CS_ACC = 0;
-// 	spi_write(0x4C);
-// 	spi_write(0x00); // changing the magnetometer to active state
-// 	CS_ACC = 1;
-//
-// 	tmr_wait_ms(TIMER1,
-// 				3); // waiting for the magnetometer to go into active state
-// }
-//
-// int read_mag_axis(enum Axis axis) {
-// 	int axis_value;
-//
-// 	// the overflow should not happen by design. If it happens the LED1 is
-// 	// turned on to signal a bug in the code
-// 	if (SPI1STATbits.SPIROV) {
-// 		SPI1STATbits.SPIROV = 0;
-// 		LATA = 1;
-// 	}
-// 	CS_ACC = 0;
-// 	// the axis registers are sequential
-// 	spi_write((0x42 + axis * 2) | 0x80); // writing the axis register to read
-//
-// 	if (axis == X_AXIS || axis == Y_AXIS) {
-// 		// converting to int and shifting the values
-// 		const int bytes_value =
-// 			(spi_write(0x00) & 0x00F------8) | (spi_write(0x00) << 8);
-// 		axis_value = bytes_value >> 3;
-// 	} else {
-// 		// converting to int and shifting the values
-// 		const int bytes_value =
-// 			(spi_write(0x00) & 0x00FE) | (spi_write(0x00) << 8);
-// 		axis_value = bytes_value >> 1;
-// 	}
-//
-// 	CS_ACC = 1;
-// 	return axis_value;
-// }
+void activate_accelerometer() {
+	// Selecting the accelerometer and disabling magnetometer and gyroscope
+	CS_MAG = 1;
+	CS_GYR = 1;
+
+	CS_ACC = 0;
+	spi_write(0x11);
+	spi_write(0x00); // changing the accelerometer to active state
+	CS_ACC = 1;
+	tmr_wait_ms(TIMER4, 3); // waiting for the accelerometer to go into active state
+}
+
+int read_acc_axis(enum Axis axis){
+	CS_ACC = 0;
+	// Startin from a specific register, I read twice
+	spi_write((0x02 + axis * 2)| 0x80); // 2 registers for each axis -> starting form 0x02 for x, 0x04 for y and 0x06 for z
+	uint8_t axis_lsb = spi_write(0x00);
+	uint8_t axis_msb = spi_write(0x00);
+	CS_ACC = 1;
+
+	// Combining readings to reconstruct the real value of accelerations
+	int axis_value = (((axis_msb << 4) | (axis_lsb & 0x0F)));
+	if (axis_value & 0x800) {
+		axis_value |= 0xF000; 
+	}
+
+	return axis_value;
+}
 
 enum RobotState robot_state = WAIT;
 
 int main(void) {
 	// TODO: is this ok ?
-	// FIXE: interrupts still triggering
+	// FIXME: interrupts still triggering
 	// IEC1bits.INT1IE = 0;
 	/*TRISA = TRISG = */ ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
 	// TRISBbits.TRISB8 = 0;
 	// TRISFbits.TRISF1 = 0;
+
+	struct AccReading acc_reading = {0};
 
 	char output_str[100]; // TODO: change with correct value
 	char input_buff[INPUT_BUFF_LEN];
@@ -119,6 +109,7 @@ int main(void) {
 	// IEC1bits.INT1IE = 1;
 
 	int count_ld1_toggle = 0;
+	int count_acc_read = 0;
 
 	const int main_hz = 500;
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
@@ -126,23 +117,23 @@ int main(void) {
 
 	int distance = 0;
 
-	tmr_wait_ms(TIMER4, 100);
-	CS_MAG = 1;
-	CS_GYR = 1;
-	CS_ACC = 0;
-	spi_write(0x11);
-	spi_write(0x00);
-	CS_ACC = 1;
-	tmr_wait_ms(TIMER4, 3);
-	CS_ACC = 0;
-	spi_write(0x00 | 0x80);
-	int chipid = spi_write(0x00);
-	CS_ACC = 1;
-
-	sprintf(output_str, "CH:%d", chipid);
-	print_to_buff(output_str, &UART_output_buff);
+	activate_accelerometer();
 
 	while (1) {
+
+		if (++count_acc_read >= CLOCK_ACC_READ) {
+			count_acc_read = 0;
+	
+			// Binding readings to reconstruct the values of accelerations along axis
+			acc_reading.x = read_acc_axis(X_AXIS);
+			acc_reading.y = read_acc_axis(Y_AXIS);
+			acc_reading.z = read_acc_axis(Z_AXIS);
+
+			sprintf(output_buff, "$MACC,%d,%d,%d*", acc_reading.x, acc_reading.y, acc_reading.z);
+            print_to_buff(output_buff, &UART_output_buff);
+            // tmr_wait_ms(TIMER1, 100);
+		}
+
 
 		if (++count_ld1_toggle >= CLOCK_LD1_TOGGLE) {
 			count_ld1_toggle = 0;
