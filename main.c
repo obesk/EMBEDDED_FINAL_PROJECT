@@ -174,12 +174,12 @@ struct ADCReading read_adc(void) {
 	return reading;
 }
 
-enum RobotState robot_state = WAIT;
+volatile enum RobotState robot_state = WAIT;
 
 // this variable is used to keep track of how many times the timer3 interrupt is
 // called this is necessary because the timer is used to count 5 seconds to go
 // back to wait state from emergency state
-int count_t3_calls = 0;
+volatile int count_t3_calls = 0;
 
 // TODO: interrupt triggering at the start
 int main(void) {
