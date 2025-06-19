@@ -13,6 +13,8 @@ void reverse(char str[], int length) {
 	}
 }
 
+// a simple implemenation of citoa since it's not available in the c standard library
+// returns the pointer to the \0 byte
 char *citoa(int num, char *str, int base) {
 	int i = 0;
 	int is_negative = 0;

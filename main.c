@@ -27,40 +27,42 @@ Given the baud rate at 9600, and with the main executed at 500 Hz, we have
 19.2 bit/s which leaves 2 byte/s */
 #define INPUT_BUFF_LEN 2
 
-//   Considerations on fixed messages:
-// - $MEMRG, 1* or $MEMRG, 0* -> same number of bytes; cannot occur on the
-//    same cycle
-// - $MACK, 1* or $MACK, 0* -> same number of bytes;
-//    NB: this message is printed both for the $PCSTP,* message and for the
-//    $PCSTT,* one;
-//    we can have at maximum one command inputted per main due to the 2 byte
-//    restriction
-//    ***********************************************************
-//    Considerations on MBATT message:
-// - $MBATT,* -> 8 bytes
-// - vbatt is always positive and 2 decimals are printed (x.xx) -> 4 bytes
+// Considerations on fixed messages:
+//  - $MEMRG, 1* or $MEMRG, 0* -> same number of bytes; cannot occur on the
+//     same cycle
+//  - $MACK, 1* or $MACK, 0* -> same number of bytes;
+//     NB: this message is printed both for the $PCSTP,* message and for the
+//     $PCSTT,* one;
+//     we can have at maximum one command inputted per main due to the 2 byte
+//     restriction
+//     ***********************************************************
+//     Considerations on MBATT message:
+//  - $MBATT,* -> 8 bytes
+//  - vbatt is always positive and 2 decimals are printed (x.xx) -> 4 bytes
 // Cosiderations on MDIST message:
-// - $MDIST,* -> 8 bytes
-// - dist is always positive and an integer of maximum 3 digits -> 3 bytes
-// Considerations on MACC message:
-// - $MACC,,,* -> 9 bytes
-// - x values can assume either positive and negative values,
-// 	and at maximum requiring 4 bytes fot the absolute values -> 5 bytes (4
-//    + 1 for the sign)
-// - same reasoning can be done for y and z
-// NB: for each message, we have to add 1 byte to consider the \0 (end of
-//    string)
-// Considering the worst case scenario, all the messages listed above can
-//    occur at the same time. In this case, the buffer should be able to contain
-//    all of them. Its size should then be given by:
-// - $MEMRG,1* or $MEMRG,0* -> (9 + 1) = 10 bytes
-// - $MACK,1* or $MACK,0* -> (8 + 1) = 9 bytes
-// - $MBATT,* + vbatt -> (8 + 4 + 1) = 13 bytes
-// - $MDIST,* + dist -> (8 + 3 + 1) = 12 bytes
-// - $MACC,,,* + x + y + z -> (9 + 5 * 3 + 1) = 25 bytes
-// TOTAL : 69 bytes
+//  - $MDIST,* -> 8 bytes
+//  - dist is always positive and an integer of maximum 3 digits -> 3 bytes
+//  Considerations on MACC message:
+//  - $MACC,,,* -> 9 bytes
+//  - x values can assume either positive and negative values,
+//  	and at maximum requiring 4 bytes fot the absolute values -> 5 bytes (4
+//     + 1 for the sign)
+//  - same reasoning can be done for y and z
+//  NB: for each message, we have to add 1 byte to consider the \0 (end of
+//     string)
+//  Considering the worst case scenario, all the messages listed above can
+//     occur at on the same cycle. In this case, the buffer should be able to
+//     contain all of them. Its size should then be given by:
+//  - $MEMRG,1* or $MEMRG,0* -> (9 + 1) = 10 bytes
+//  - $MACK,1* or $MACK,0* -> (8 + 1) = 9 bytes
+//  - $MBATT,* + vbatt -> (8 + 4 + 1) = 13 bytes
+//  - $MDIST,* + dist -> (8 + 3 + 1) = 12 bytes
+//  - $MACC,,,* + x + y + z -> (9 + 5 * 3 + 1) = 25 bytes
+//  TOTAL : 69 bytes
 
 #define OUTPUT_BUFF_LEN 69
+
+// this is sized to contain the largest message, which is MACC
 #define OUTPUT_STR_LEN 25
 
 #define OBSTACLE_THRESHOLD_CM 30
@@ -238,6 +240,8 @@ int main(void) {
 	tmr_setup_period(TIMER1, 1000 / MAIN_HZ); // 100 Hz frequency
 
 	char *cursor;
+	// Messages are printed using citoa instead of sprintf since the latter is
+	// very inefficient and casuses the deadlines to be missed
 	while (1) {
 		if (++count_acc_read >= CLOCK_ACC_READ) {
 			count_acc_read = 0;
@@ -301,8 +305,8 @@ int main(void) {
 				dist += ADC_readings.readings[i].distance;
 			}
 
-			int idist = dist / N_ADC_READINGS;
-			distance = idist;
+			distance = dist / N_ADC_READINGS;
+			int idist = (int)distance;
 			cursor = output_str;
 			cursor = stpcpy(cursor, "$MDIST,");
 			cursor = citoa(idist, cursor, 10);
