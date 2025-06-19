@@ -1,9 +1,10 @@
 #include "xc.h"
 #include "pwm.h"
 
-// TODO: change this and check if fcy is correct
-#define FCY 72000000UL
-#define PWM_FREQ 10000UL
+#include <math.h>
+
+#define FCY 72000000
+#define PWM_FREQ 10000
 #define PWM_PERIOD_TICKS (FCY/PWM_FREQ)
 
 void pwm_init(void) {
@@ -63,9 +64,8 @@ void pwm_set_velocities(int forward_speed, int yaw_rate) {
 		left_speed = -100;
 	}
 
-	//TODO: use abs function
-	int abs_right = right_speed > 0 ? right_speed : -right_speed;
-	int abs_left = left_speed > 0 ? left_speed : -left_speed;
+	int abs_right = abs(right_speed);
+	int abs_left = abs(left_speed);
 
 	if (right_speed > 0) {
 		OC4R = comp_duty(abs_right);

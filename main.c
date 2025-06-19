@@ -129,13 +129,9 @@ enum RobotState robot_state = WAIT;
 int count_t3_calls = 0;
 
 int main(void) {
-	// TODO: is this ok ?
-	// FIXME: interrupts still triggering
-	// IEC1bits.INT1IE = 0;
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
-	// TODO: check if needed (emergency)
 	TRISBbits.TRISB8 = 0;
 	TRISFbits.TRISF1 = 0;
 
@@ -173,6 +169,7 @@ int main(void) {
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
+	enum RobotState robot_state_prev = robot_state;
 	int distance = OBSTACLE_THRESHOLD_CM;
 
 	activate_accelerometer();
@@ -214,11 +211,13 @@ int main(void) {
 			tmr_setup_period(TIMER3, 10);
 		}
 
-		// TODO: is this ok ?
-		if (robot_state == MOVING) {
-			pwm_start();
-		} else {
-			pwm_stop();
+		if (robot_state != robot_state_prev) {
+			if (robot_state == MOVING) {
+				pwm_start();
+			} else {
+				pwm_stop();
+			}
+			robot_state_prev = robot_state;
 		}
 
 		ADC_readings.readings[ADC_readings.w] = read_adc();
