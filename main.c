@@ -6,7 +6,6 @@
 #include "uart.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <string.h>
 #include <xc.h>
 
@@ -107,13 +106,13 @@ int read_acc_axis(enum Axis axis) {
 struct ADCReading read_adc(void) {
 	struct ADCReading reading;
 
+	AD1CON1bits.ADON = 1;
 	while (!AD1CON1bits.DONE) {
 		;
 	}
 
-	AD1CON1bits.SAMP = 0;
 	int adc0_raw_reading = ADC1BUF0;
-	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3
 	reading.vbatt = v_adc * 3;
 
 	int adc2_raw_reading = ADC1BUF1;
@@ -122,7 +121,7 @@ struct ADCReading read_adc(void) {
 	reading.distance = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) -
 						1.6 * pow(v_adc_ir, 3) + 0.24 * pow(v_adc_ir, 4)) *
 					   100;
-	AD1CON1bits.SAMP = 1;
+	AD1CON1bits.ADON = 0;
 
 	return reading;
 }
@@ -153,8 +152,6 @@ int main(void) {
 	UART_output_buff.buff = output_buff;
 
 	timers_init();
-	tmr_setup_period(TIMER1, 100);
-
 	pwm_init();
 	button_init();
 	init_uart();
@@ -172,7 +169,6 @@ int main(void) {
 	int count_ir_print = 0;
 	int count_batt_print = 0;
 
-	tmr_setup_period(TIMER1, 1000 / MAIN_HZ); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
 	enum RobotState robot_state_prev = robot_state;
@@ -180,6 +176,10 @@ int main(void) {
 
 	activate_accelerometer();
 	INTCON2bits.GIE = 1;
+	int missed = 0;
+
+	tmr_setup_period(TIMER1, 1000 / MAIN_HZ); // 100 Hz frequency
+	char *cursor;
 	while (1) {
 
 		if (++count_acc_read >= CLOCK_ACC_READ) {
@@ -191,8 +191,15 @@ int main(void) {
 			acc_reading.y = read_acc_axis(Y_AXIS);
 			acc_reading.z = read_acc_axis(Z_AXIS);
 
-			sprintf(output_str, "$MACC,%d,%d,%d*", acc_reading.x, acc_reading.y,
-					acc_reading.z);
+			cursor = output_str;
+
+			cursor = stpcpy(cursor, "$MACC,");
+			cursor = citoa(acc_reading.x, cursor, 10);
+			cursor = stpcpy(cursor, ",");
+			cursor = citoa(acc_reading.y, cursor, 10);
+			cursor = stpcpy(cursor, ",");
+			cursor = citoa(acc_reading.z, cursor, 10);
+			cursor = strcpy(cursor, "*");
 			print_to_buff(output_str, &UART_output_buff);
 		}
 
@@ -239,7 +246,10 @@ int main(void) {
 
 			int idist = dist / N_ADC_READINGS;
 			distance = idist;
-			sprintf(output_str, "$MDIST,%d*", idist);
+			cursor = output_str;
+			cursor = stpcpy(cursor, "$MDIST,");
+			cursor = citoa(idist, cursor, 10);
+			cursor = stpcpy(cursor, "*");
 			print_to_buff(output_str, &UART_output_buff);
 		}
 
@@ -253,7 +263,12 @@ int main(void) {
 
 			v_batt /= N_ADC_READINGS;
 
-			sprintf(output_str, "$MBATT,%.2f*", v_batt);
+			cursor = output_str;
+			cursor = stpcpy(cursor, "$MBATT,");
+			cursor = citoa((int)v_batt, cursor, 10);
+			cursor = stpcpy(cursor, ".");
+			cursor = citoa((int)(v_batt * 100) % 100, cursor, 10);
+			cursor = stpcpy(cursor, "*");
 			print_to_buff(output_str, &UART_output_buff);
 		}
 
@@ -286,7 +301,11 @@ int main(void) {
 			UART_input_buff.read = (UART_input_buff.read + 1) % INPUT_BUFF_LEN;
 		}
 
-		tmr_wait_period(TIMER1);
+		missed += tmr_wait_period(TIMER1);
+		if (missed) {
+			LATBbits.LATB8 = 1;
+			LATFbits.LATF1 = 1;
+		}
 	}
 	return 0;
 }

@@ -16,7 +16,6 @@ void init_adc(void){
     AD1CON1bits.ADON = 0; // Turn off the ADC
     AD1CON1bits.FORM = 0b00; // Data Output Format integer
 
-	// TODO: change frequency to 500Hz
     AD1CON3bits.ADCS = 8; // Set the Tad
     AD1CON1bits.ASAM = 1; // Selecting automatic mode starting
     AD1CON3bits.SAMC = 16; // Set the automatic end
@@ -34,7 +33,4 @@ void init_adc(void){
     AD1CSSL = 0;
     AD1CSSLbits.CSS14 = 1; // Select AN14 - IR sensor
     AD1CSSLbits.CSS11 = 1; // Select AN11 - Battery
-
-    AD1CON1bits.ADON = 1; // Turn on the ADC
-    AD1CON1bits.SAMP = 1;
 }
