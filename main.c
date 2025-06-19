@@ -1,4 +1,5 @@
 #include "adc.h"
+#include "citoa.h"
 #include "parser.h"
 #include "pwm.h"
 #include "spi.h"
