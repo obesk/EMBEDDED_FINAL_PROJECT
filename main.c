@@ -54,7 +54,7 @@ Given the baud rate at 9600, and with the main executed at 500 Hz, we have 48 by
 	- $MACC,,,* + x + y + z -> (9 + 5 * 3 + 1) = 25 bytes 
 	TOTAL : 69 bytes */
 
-#define OUTPUT_BUFF_LEN 64
+#define OUTPUT_BUFF_LEN 69
 
 #define OBSTACLE_THRESHOLD_CM 30 // threshold for emergecy state
 
@@ -146,8 +146,8 @@ struct ADCReading read_adc(void) {
 	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
 	reading.vbatt = v_adc * 3;
 
-	int adc2_raw_reading = ADC1BUF2; 
-	double v_adc_ir = (adc2_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
+	int adc1_raw_reading = ADC1BUF1; 
+	double v_adc_ir = (adc1_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3 V
 	reading.distance = (2.34 - 4.74 * v_adc_ir + 4.06 * pow(v_adc_ir, 2) - 1.6 * pow(v_adc_ir, 3) + 0.24 * pow(v_adc_ir, 4)) * 100;
 	AD1CON1bits.SAMP = 1; // restarting the sampling 
 
@@ -158,8 +158,6 @@ enum RobotState robot_state = WAIT; // starting state of the system
 int count_t3_calls = 0;
 
 int main(void) {
-	// TODO: is this ok ?
-	// FIXME: interrupts still triggering
 	// IEC1bits.INT1IE = 0;
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG = 0x0000;
 
@@ -178,6 +176,7 @@ int main(void) {
 	// struct initialization
 	struct ADCReadings ADC_readings;
 	struct AccReading acc_reading = {0};
+	enum RobotState robot_state_prev = robot_state;
 
 	// buffer and string initialization
 	char output_str[25]; // 25 bytes = max lenght between all output messages
@@ -203,7 +202,7 @@ int main(void) {
 	int count_ir_print = 0;
 	int count_batt_print = 0;
 	
-	int distance = 0;
+	int distance = OBSTACLE_THRESHOLD_CM;
 
 	// filling array readings of ADC_readings to correctly compute the mean afterwards
 	for (int i = 0; i < N_ADC_READINGS; ++i) {
@@ -246,10 +245,13 @@ int main(void) {
 		}
 
 		// PWM management
-		if (robot_state == MOVING) {
-			pwm_start();
-		} else {
-			pwm_stop();
+		if (robot_state != robot_state_prev) {
+			if (robot_state == MOVING) {
+				pwm_start();
+			} else {
+				pwm_stop();
+			}
+			robot_state_prev = robot_state;
 		}
 
 		// adding the newest value of distance and battery readings from ADC to ADC_readings struct
