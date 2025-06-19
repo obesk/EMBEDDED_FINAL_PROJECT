@@ -12,6 +12,8 @@
 #define CLOCK_IR_PRINT 50
 #define CLOCK_ACC_READ 50
 
+#define COUNT_T3_CALLS 500
+
 // TODO: size correctly and explain why
 #define INPUT_BUFF_LEN 100
 #define OUTPUT_BUFF_LEN 100
@@ -121,6 +123,8 @@ struct ADCReading read_adc(void) {
 
 enum RobotState robot_state = WAIT;
 
+int count_t3_calls = 0;
+
 int main(void) {
 	// TODO: is this ok ?
 	// FIXME: interrupts still triggering
@@ -166,7 +170,7 @@ int main(void) {
 	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
-	int distance = 100;
+	int distance = OBSTACLE_THRESHOLD_CM;
 
 	activate_accelerometer();
 	INTCON2bits.GIE = 1;
@@ -200,9 +204,8 @@ int main(void) {
 
 		if (distance < OBSTACLE_THRESHOLD_CM) {
 			robot_state = EMERGENCY;
-			// TODO: print only once
-			print_to_buff("$MEMRG,1*", &UART_output_buff);
-			tmr_setup_period(TIMER3, 10000);
+			count_t3_calls = 0;
+			tmr_setup_period(TIMER3, 10);
 		}
 
 		// TODO: is this ok ?
@@ -299,9 +302,16 @@ void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 
 void __attribute__((__interrupt__, no_auto_psv)) _T3Interrupt(void) {
 	IFS0bits.T3IF = 0;
-	T3CONbits.TON = 0;
+	if (!count_t3_calls) {
+		print_to_buff("$MEMRG,1*", &UART_output_buff);
+	}
 
-	robot_state = WAIT;
+	if (++count_t3_calls > COUNT_T3_CALLS) {
+		print_to_buff("$MEMRG,1*", &UART_output_buff);
+		count_t3_calls = 0;
+		T3CONbits.TON = 0;
+		robot_state = WAIT;
+	}
 }
 
 void __attribute__((__interrupt__, no_auto_psv)) _U1TXInterrupt(void) {
