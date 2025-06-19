@@ -38,8 +38,7 @@ void print_to_buff(const char * str, volatile struct circular_buffer *buff) {
         buff->write = new_write_index;
     }
 
-    // if the last UART transfer didn't send any data we retrigger the interrupt
-    // manually to send the new data
+    // if the last UART transfer didn't send any data we retrigger the interrupt manually to send the new data
     if(UART_INTERRUPT_TX_MANUAL_TRIG){
         UART_INTERRUPT_TX_MANUAL_TRIG = 0;
         IFS0bits.U1TXIF = 1;

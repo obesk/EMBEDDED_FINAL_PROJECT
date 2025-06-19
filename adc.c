@@ -7,8 +7,8 @@
 
 void init_adc(void){
 
-    ANSELBbits.ANSB11 = 1;
-    TRISBbits.TRISB11 = 1;
+    ANSELBbits.ANSB11 = 1; // setting the pin to analog mode
+    TRISBbits.TRISB11 = 1; // setting the pin as input
 
     ANSELBbits.ANSB14 = 1;
     TRISBbits.TRISB14 = 1;
@@ -26,14 +26,15 @@ void init_adc(void){
     AD1CON2bits.VCFG = 0b00;// Voltage reference vdd
 
     AD1CON2bits.CSCNA = 1; // activate scan mode
-    AD1CON2bits.CHPS = 0; // 2 channel mode
-    AD1CON1bits.SIMSAM = 0; // Enable sequential scanning
-    AD1CON2bits.SMPI = 1; //
+    AD1CON2bits.CHPS = 1; // 2 channel mode
+    AD1CON1bits.SIMSAM = 1; // Enable sequential scanning
+    AD1CON2bits.SMPI = 1; // 1 interrupt eachc scanning cycle
 
+    // Selecting the channels for automatic scanning
     AD1CSSL = 0;
     AD1CSSLbits.CSS14 = 1; // Select AN14 - IR sensor
     AD1CSSLbits.CSS11 = 1; // Select AN11 - Battery
-
+    
     AD1CON1bits.ADON = 1; // Turn on the ADC
-    AD1CON1bits.SAMP = 1;
+    AD1CON1bits.SAMP = 1; // Starting manually the first sampling 
 }

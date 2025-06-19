@@ -1,7 +1,6 @@
 #include "xc.h"
 #include "pwm.h"
 
-// TODO: change this and check if fcy is correct
 #define FCY 72000000UL
 #define PWM_FREQ 10000UL
 #define PWM_PERIOD_TICKS (FCY/PWM_FREQ)
@@ -18,7 +17,6 @@ void pwm_init(void) {
 	OC2CON1bits.OCTSEL = 7;
 	OC3CON1bits.OCTSEL = 7;
 	OC4CON1bits.OCTSEL = 7;
-
 
 	// Setting the period of the PWM
 	OC1RS = PWM_PERIOD_TICKS;
@@ -99,6 +97,7 @@ void pwm_stop(void) {
 }
 
 int comp_duty(int percentage) {  
+	// computing real velocity value
     return (PWM_PERIOD_TICKS * percentage) / 100;
 }
 
