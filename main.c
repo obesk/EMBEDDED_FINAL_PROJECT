@@ -10,6 +10,8 @@
 #include <string.h>
 #include <xc.h>
 
+#define MAIN_HZ 500
+
 #define CLOCK_LD1_TOGGLE 250
 #define CLOCK_BATT_PRINT 500
 #define CLOCK_IR_PRINT 50
@@ -67,6 +69,7 @@ void button_init(void) {
 	RPINR0bits.INT1R = 0x58; // remapping the interrupt 1 to the T2 button pin
 	IFS1bits.INT1IF = 0;	 // resetting flag of interrupt 1
 	IEC1bits.INT1IE = 1;	 // enabling interrupt 1
+	IFS1bits.INT1IF = 0;	 // resetting flag of interrupt 1
 }
 
 void activate_accelerometer() {
@@ -128,7 +131,9 @@ enum RobotState robot_state = WAIT;
 
 int count_t3_calls = 0;
 
+// TODO: interrupt triggering at the start
 int main(void) {
+	INTCON2bits.GIE = 0;
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
@@ -147,9 +152,11 @@ int main(void) {
 	UART_input_buff.buff = input_buff;
 	UART_output_buff.buff = output_buff;
 
+	timers_init();
+	tmr_setup_period(TIMER1, 100);
+
 	pwm_init();
 	button_init();
-	timers_init();
 	init_uart();
 	init_spi();
 	init_adc();
@@ -165,8 +172,7 @@ int main(void) {
 	int count_ir_print = 0;
 	int count_batt_print = 0;
 
-	const int main_hz = 500;
-	tmr_setup_period(TIMER1, 1000 / main_hz); // 100 Hz frequency
+	tmr_setup_period(TIMER1, 1000 / MAIN_HZ); // 100 Hz frequency
 	parser_state pstate = {.state = STATE_DOLLAR};
 
 	enum RobotState robot_state_prev = robot_state;
