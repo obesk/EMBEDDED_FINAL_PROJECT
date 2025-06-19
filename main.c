@@ -10,17 +10,57 @@
 #include <xc.h>
 
 #define MAIN_HZ 500
-
+// 1 Hz, 500ms high, 500ms low
 #define CLOCK_LD1_TOGGLE 250
+// 1Hz
 #define CLOCK_BATT_PRINT 500
+// 10 Hz
 #define CLOCK_IR_PRINT 50
+// 10 Hz
 #define CLOCK_ACC_READ 50
 
 #define COUNT_T3_CALLS 500
 
-// TODO: size correctly and explain why
-#define INPUT_BUFF_LEN 100
-#define OUTPUT_BUFF_LEN 100
+/* Since we use a 10 bit UART transmission we use 10 bits for a byte of data.
+Given the baud rate at 9600, and with the main executed at 500 Hz, we have
+19.2 bit/s which leaves 2 byte/s */
+#define INPUT_BUFF_LEN 2
+
+//   Considerations on fixed messages:
+// - $MEMRG, 1* or $MEMRG, 0* -> same number of bytes; cannot occur on the
+//    same cycle
+// - $MACK, 1* or $MACK, 0* -> same number of bytes;
+//    NB: this message is printed both for the $PCSTP,* message and for the
+//    $PCSTT,* one;
+//    we can have at maximum one command inputted per main due to the 2 byte
+//    restriction
+//    ***********************************************************
+//    Considerations on MBATT message:
+// - $MBATT,* -> 8 bytes
+// - vbatt is always positive and 2 decimals are printed (x.xx) -> 4 bytes
+// Cosiderations on MDIST message:
+// - $MDIST,* -> 8 bytes
+// - dist is always positive and an integer of maximum 3 digits -> 3 bytes
+// Considerations on MACC message:
+// - $MACC,,,* -> 9 bytes
+// - x values can assume either positive and negative values,
+// 	and at maximum requiring 4 bytes fot the absolute values -> 5 bytes (4
+//    + 1 for the sign)
+// - same reasoning can be done for y and z
+// NB: for each message, we have to add 1 byte to consider the \0 (end of
+//    string)
+// Considering the worst case scenario, all the messages listed above can
+//    occur at the same time. In this case, the buffer should be able to contain
+//    all of them. Its size should then be given by:
+// - $MEMRG,1* or $MEMRG,0* -> (9 + 1) = 10 bytes
+// - $MACK,1* or $MACK,0* -> (8 + 1) = 9 bytes
+// - $MBATT,* + vbatt -> (8 + 4 + 1) = 13 bytes
+// - $MDIST,* + dist -> (8 + 3 + 1) = 12 bytes
+// - $MACC,,,* + x + y + z -> (9 + 5 * 3 + 1) = 25 bytes
+// TOTAL : 69 bytes
+
+#define OUTPUT_BUFF_LEN 69
+#define OUTPUT_STR_LEN 25
 
 #define OBSTACLE_THRESHOLD_CM 30
 
@@ -68,7 +108,9 @@ void button_init(void) {
 	RPINR0bits.INT1R = 0x58; // remapping the interrupt 1 to the T2 button pin
 	IFS1bits.INT1IF = 0;	 // resetting flag of interrupt 1
 	IEC1bits.INT1IE = 1;	 // enabling interrupt 1
-	IFS1bits.INT1IF = 0;	 // resetting flag of interrupt 1
+	// Resetting the flag after the enable prevents the interrupt to be
+	// triggered at startup
+	IFS1bits.INT1IF = 0; // resetting flag of interrupt 1
 }
 
 void activate_accelerometer() {
@@ -106,14 +148,19 @@ int read_acc_axis(enum Axis axis) {
 struct ADCReading read_adc(void) {
 	struct ADCReading reading;
 
+	// we activate the ADC only for the reading phase to keep the acquisition
+	// frequency at 500Hz
 	AD1CON1bits.ADON = 1;
+
+	// the active wait time is negligible since the ADC frequency is orders of
+	// magnitude bigger
 	while (!AD1CON1bits.DONE) {
 		;
 	}
 
 	int adc0_raw_reading = ADC1BUF0;
 	double v_adc = (adc0_raw_reading / 1023.0) * 3.3; // assuming Vref+ = 3.3
-	reading.vbatt = v_adc * 3;
+	reading.vbatt = v_adc * 3; // multplying since the voltage is partitioned
 
 	int adc2_raw_reading = ADC1BUF1;
 	double v_adc_ir =
@@ -128,6 +175,9 @@ struct ADCReading read_adc(void) {
 
 enum RobotState robot_state = WAIT;
 
+// this variable is used to keep track of how many times the timer3 interrupt is
+// called this is necessary because the timer is used to count 5 seconds to go
+// back to wait state from emergency state
 int count_t3_calls = 0;
 
 // TODO: interrupt triggering at the start
@@ -136,15 +186,17 @@ int main(void) {
 	TRISA = TRISG = ANSELA = ANSELB = ANSELC = ANSELD = ANSELE = ANSELG =
 		0x0000;
 
+	// activating the side light pins
 	TRISBbits.TRISB8 = 0;
 	TRISFbits.TRISF1 = 0;
 
+	// enabling IR on buggy's MikroBUS 2
 	TRISBbits.TRISB9 = 0;
-	LATBbits.LATB9 = 1; // IR enable
+	LATBbits.LATB9 = 1;
 
 	struct AccReading acc_reading = {0};
 
-	char output_str[100]; // TODO: change with correct value
+	char output_str[OUTPUT_STR_LEN];
 	char input_buff[INPUT_BUFF_LEN];
 	char output_buff[OUTPUT_BUFF_LEN];
 
@@ -158,8 +210,12 @@ int main(void) {
 	init_spi();
 	init_adc();
 
+	pwm_set_velocities(100, 0); // initializing motor velocities when running
+
 	struct ADCReadings ADC_readings;
 
+	// filling the ADC readings s.t. we do not print an errouneous average for
+	// the first real measurements
 	for (int i = 0; i < N_ADC_READINGS; ++i) {
 		ADC_readings.readings[i] = read_adc();
 	}
@@ -175,18 +231,16 @@ int main(void) {
 	int distance = OBSTACLE_THRESHOLD_CM;
 
 	activate_accelerometer();
+
 	INTCON2bits.GIE = 1;
-	int missed = 0;
 
 	tmr_setup_period(TIMER1, 1000 / MAIN_HZ); // 100 Hz frequency
+
 	char *cursor;
 	while (1) {
-
 		if (++count_acc_read >= CLOCK_ACC_READ) {
 			count_acc_read = 0;
 
-			// Binding readings to reconstruct the values of accelerations along
-			// axis
 			acc_reading.x = read_acc_axis(X_AXIS);
 			acc_reading.y = read_acc_axis(Y_AXIS);
 			acc_reading.z = read_acc_axis(Z_AXIS);
@@ -215,6 +269,8 @@ int main(void) {
 			}
 		}
 
+		// each time the obstacle is too close we reset the timer which will put
+		// the robot back in wait state
 		if (distance < OBSTACLE_THRESHOLD_CM) {
 			if (robot_state != EMERGENCY) {
 				print_to_buff("$MEMRG,1*", &UART_output_buff);
@@ -300,21 +356,19 @@ int main(void) {
 			}
 			UART_input_buff.read = (UART_input_buff.read + 1) % INPUT_BUFF_LEN;
 		}
-
-		missed += tmr_wait_period(TIMER1);
-		if (missed) {
-			LATBbits.LATB8 = 1;
-			LATFbits.LATF1 = 1;
-		}
+		tmr_wait_period(TIMER1);
 	}
 	return 0;
 }
 
+// triggered when the RE8 button
 void __attribute__((__interrupt__, __auto_psv__)) _INT1Interrupt(void) {
 	IFS1bits.INT1IF = 0;
+	// using a timer to debounce the button click
 	tmr_setup_period(TIMER2, 10);
 }
 
+// this is triggered when RE8 is released for at least 10ms
 void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 	IFS0bits.T2IF = 0;
 	T2CONbits.TON = 0;
@@ -330,6 +384,7 @@ void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 	}
 }
 
+// used to manage the emergency state
 void __attribute__((__interrupt__, no_auto_psv)) _T3Interrupt(void) {
 	IFS0bits.T3IF = 0;
 
