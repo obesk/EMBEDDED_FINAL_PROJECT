@@ -1,9 +1,12 @@
+#include "adc.h"
 #include "parser.h"
 #include "pwm.h"
 #include "spi.h"
 #include "timer.h"
 #include "uart.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <xc.h>
 
@@ -203,6 +206,9 @@ int main(void) {
 		}
 
 		if (distance < OBSTACLE_THRESHOLD_CM) {
+			if (robot_state != EMERGENCY) {
+				print_to_buff("$MEMRG,1*", &UART_output_buff);
+			}
 			robot_state = EMERGENCY;
 			count_t3_calls = 0;
 			tmr_setup_period(TIMER3, 10);
@@ -302,12 +308,9 @@ void __attribute__((__interrupt__, no_auto_psv)) _T2Interrupt(void) {
 
 void __attribute__((__interrupt__, no_auto_psv)) _T3Interrupt(void) {
 	IFS0bits.T3IF = 0;
-	if (!count_t3_calls) {
-		print_to_buff("$MEMRG,1*", &UART_output_buff);
-	}
 
 	if (++count_t3_calls > COUNT_T3_CALLS) {
-		print_to_buff("$MEMRG,1*", &UART_output_buff);
+		print_to_buff("$MEMRG,0*", &UART_output_buff);
 		count_t3_calls = 0;
 		T3CONbits.TON = 0;
 		robot_state = WAIT;

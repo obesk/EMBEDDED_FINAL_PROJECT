@@ -16,6 +16,6 @@ struct circular_buffer {
 };
 
 void init_uart();
-void print_to_buff(const char * str, struct circular_buffer *buff);
+void print_to_buff(const char * str, volatile struct circular_buffer *buff);
 
 #endif	/* UART_H */
